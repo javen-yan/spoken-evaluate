@@ -19,22 +19,36 @@ export class SpokenEvaluateClient {
   }
 
   /**
-   * @param {{ referenceText: string, referenceAudio: File | Blob, userAudio: File | Blob }} payload
+   * @param {{ referenceText: string, userAudio: File | Blob, evaluationMode?: "WORD" | "SENTENCE", voiceType?: 1 | 2 }} payload
    */
   async evaluate(payload) {
-    const { referenceText, referenceAudio, userAudio } = payload;
+    const {
+      referenceText,
+      userAudio,
+      evaluationMode = "WORD",
+      voiceType = 2,
+    } = payload;
 
-    if (!referenceAudio) {
-      throw new Error("缺少 referenceAudio 文件");
+    if (!referenceText) {
+      throw new Error("缺少 referenceText 字段");
     }
     if (!userAudio) {
       throw new Error("缺少 userAudio 文件");
     }
+    if (![1, 2].includes(voiceType)) {
+      throw new Error("voiceType 仅支持 1 (UK) 或 2 (US)");
+    }
+
+    const normalizedMode = String(evaluationMode || "WORD").toUpperCase();
+    if (!["WORD", "SENTENCE"].includes(normalizedMode)) {
+      throw new Error("evaluationMode 仅支持 WORD 或 SENTENCE");
+    }
 
     const formData = new FormData();
     formData.append("reference_text", referenceText || "");
-    formData.append("reference_audio", referenceAudio);
     formData.append("user_audio", userAudio);
+    formData.append("evaluation_mode", normalizedMode);
+    formData.append("voice_type", String(voiceType));
 
     const url = `${this.baseUrl}/api/evaluate`.replace("//api", "/api");
     const response = await this.fetch(url, {

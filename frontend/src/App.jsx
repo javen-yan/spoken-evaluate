@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const formatNumber = (value, fractionDigits = 2) =>
   typeof value === "number" ? value.toFixed(fractionDigits) : "-";
 
-function LetterScoreList({ scores }) {
+function CharacterScoreList({ scores }) {
   if (!scores?.length) {
-    return <p>暂无字母级评分，请确认参考文本是否填写正确。</p>;
+    return <p>暂无字符级评分，请确认参考文本是否填写正确。</p>;
   }
 
   return (
@@ -22,10 +22,28 @@ function LetterScoreList({ scores }) {
   );
 }
 
+function WordScoreList({ scores }) {
+  if (!scores?.length) {
+    return <p>暂无单词级评分，请确认文本是否填写正确。</p>;
+  }
+
+  return (
+    <div className="letter-list">
+      {scores.map((item) => (
+        <div className="letter-item" key={`${item.word}-${item.frame_start}`}>
+          <span className="symbol">{item.word}</span>
+          <span>{formatNumber(item.score, 1)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [referenceText, setReferenceText] = useState("Hello");
-  const [referenceAudio, setReferenceAudio] = useState(null);
   const [userAudio, setUserAudio] = useState(null);
+  const [evaluationMode, setEvaluationMode] = useState("WORD");
+  const [voiceType, setVoiceType] = useState(2);
   const [result, setResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -41,11 +59,6 @@ export default function App() {
       }
     };
   }, []);
-
-  const handleReferenceAudioChange = (event) => {
-    const [file] = event.target.files;
-    setReferenceAudio(file || null);
-  };
 
   const handleUserAudioChange = (event) => {
     const [file] = event.target.files;
@@ -92,10 +105,6 @@ export default function App() {
   const handleSubmit = useCallback(
     async (event) => {
       event?.preventDefault();
-      if (!referenceAudio) {
-        setError("请先上传参考音频文件。");
-        return;
-      }
       if (!userAudio) {
         setError("请录制或上传用户音频文件。");
         return;
@@ -107,8 +116,9 @@ export default function App() {
       try {
         const formData = new FormData();
         formData.append("reference_text", referenceText.trim() || "Hello");
-        formData.append("reference_audio", referenceAudio);
         formData.append("user_audio", userAudio);
+        formData.append("evaluation_mode", evaluationMode);
+        formData.append("voice_type", String(voiceType));
 
         const endpoint = `${API_BASE_URL}/api/evaluate`.replace("//api", "/api");
         const response = await fetch(endpoint, {
@@ -130,47 +140,22 @@ export default function App() {
         setIsSubmitting(false);
       }
     },
-    [referenceAudio, referenceText, userAudio]
+    [evaluationMode, referenceText, userAudio, voiceType]
   );
 
   const reset = () => {
     setReferenceText("Hello");
-    setReferenceAudio(null);
     setUserAudio(null);
+    setEvaluationMode("WORD");
+    setVoiceType(2);
     setResult(null);
     setError("");
   };
 
-  const metricsView = useMemo(() => {
-    if (!result?.metrics) return null;
-    const { dtw_distance, energy_ratio, duration_ratio, articulation_score } = result.metrics;
-
-    return (
-      <div className="metrics-grid">
-        <div className="metric-item">
-          <h4>DTW 距离</h4>
-          <span>{formatNumber(dtw_distance)}</span>
-        </div>
-        <div className="metric-item">
-          <h4>音量比</h4>
-          <span>{formatNumber(energy_ratio)}</span>
-        </div>
-        <div className="metric-item">
-          <h4>时长比</h4>
-          <span>{formatNumber(duration_ratio)}</span>
-        </div>
-        <div className="metric-item">
-          <h4>咬字分</h4>
-          <span>{formatNumber(articulation_score, 1)}</span>
-        </div>
-      </div>
-    );
-  }, [result]);
-
   return (
     <div className="app">
       <h1>口语评测演示</h1>
-      <p>上传标准读音并录制自己的读音，系统会通过 DTW + MFCC 对比给出评分。</p>
+      <p>填写参考文本并录制自己的读音，系统将自动从有道获取标准音频进行比对。</p>
 
       <form className="card" onSubmit={handleSubmit}>
         <div className="field">
@@ -185,14 +170,28 @@ export default function App() {
         </div>
 
         <div className="field">
-          <label htmlFor="reference-audio">参考音频</label>
-          <input
-            id="reference-audio"
-            type="file"
-            accept="audio/*"
-            onChange={handleReferenceAudioChange}
-          />
-          {referenceAudio && <span>已选择：{referenceAudio.name}</span>}
+          <label htmlFor="evaluation-mode">评测模式</label>
+          <select
+            id="evaluation-mode"
+            value={evaluationMode}
+            onChange={(event) => setEvaluationMode(event.target.value)}
+          >
+            <option value="WORD">单词模式</option>
+            <option value="SENTENCE">句子模式</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="voice-type">标准发音类型</label>
+          <select
+            id="voice-type"
+            value={voiceType}
+            onChange={(event) => setVoiceType(Number(event.target.value))}
+          >
+            <option value={1}>英式发音 (type=1)</option>
+            <option value={2}>美式发音 (type=2)</option>
+          </select>
+          <small>从有道字典获取标准音频所使用的发音类型。</small>
         </div>
 
         <div className="field">
@@ -226,21 +225,63 @@ export default function App() {
 
       {result && (
         <div className="card result-card">
-          <div>
-            <span className="score">{formatNumber(result.overall_score, 1)}</span>
-            <div>综合评分（0-100）</div>
-            <div>归一化分数：{formatNumber(result.normalized_score, 3)}</div>
-          </div>
+          {result.mode === "WORD" && result.word_result && (
+            <>
+              <div>
+                <span className="score">{formatNumber(result.word_result.overall_score, 1)}</span>
+                <div>整体单词评分（0-100）</div>
+              </div>
+              <div>
+                <h2>逐字评分</h2>
+                <CharacterScoreList scores={result.word_result.character_scores} />
+              </div>
+              <div className="metrics-grid">
+                <div className="metric-item">
+                  <h4>综合得分</h4>
+                  <span>{formatNumber(result.word_result.composite_score, 1)}</span>
+                </div>
+                <div className="metric-item">
+                  <h4>MFCC 得分</h4>
+                  <span>{formatNumber(result.word_result.mfcc_score, 1)}</span>
+                </div>
+                <div className="metric-item">
+                  <h4>能量得分</h4>
+                  <span>{formatNumber(result.word_result.energy_score, 1)}</span>
+                </div>
+                <div className="metric-item">
+                  <h4>音高得分</h4>
+                  <span>{formatNumber(result.word_result.pitch_score, 1)}</span>
+                </div>
+              </div>
+            </>
+          )}
 
-          <div>
-            <h2>逐字评分</h2>
-            <LetterScoreList scores={result.letter_scores} />
-          </div>
-
-          <div>
-            <h2>评估指标</h2>
-            {metricsView}
-          </div>
+          {result.mode === "SENTENCE" && result.sentence_result && (
+            <>
+              <div>
+                <span className="score">{formatNumber(result.sentence_result.overall_score, 1)}</span>
+                <div>整体句子评分（0-100）</div>
+              </div>
+              <div>
+                <h2>单词级评分</h2>
+                <WordScoreList scores={result.sentence_result.word_scores} />
+              </div>
+              <div className="metrics-grid">
+                <div className="metric-item">
+                  <h4>发音得分</h4>
+                  <span>{formatNumber(result.sentence_result.pronunciation_score, 1)}</span>
+                </div>
+                <div className="metric-item">
+                  <h4>流利度得分</h4>
+                  <span>{formatNumber(result.sentence_result.fluency_score, 1)}</span>
+                </div>
+                <div className="metric-item">
+                  <h4>单词总分</h4>
+                  <span>{formatNumber(result.sentence_result.word_total_score, 1)}</span>
+                </div>
+              </div>
+            </>
+          )}
 
           {result.transcript?.text ? (
             <div>
