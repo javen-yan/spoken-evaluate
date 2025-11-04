@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .schemas import EvaluationResponse, HealthResponse
+from .schemas import EvaluationMode, EvaluationResponse, HealthResponse
 from .services.audio_processing import AudioProcessingError, AudioProcessingService
 from .services.evaluator import AudioEvaluator
 from .services.speech_recognizer import SpeechRecognizer, WhisperConfig
@@ -65,8 +65,9 @@ async def health() -> HealthResponse:
 @app.post("/api/evaluate", response_model=EvaluationResponse, tags=["evaluation"])
 async def evaluate_pronunciation(
     reference_text: Annotated[str, Form(...)],
-    reference_audio: Annotated[UploadFile, File(...)],
     user_audio: Annotated[UploadFile, File(...)],
+    evaluation_mode: Annotated[EvaluationMode, Form(...)],
+    voice_type: Annotated[int, Form(2)] = 2,
     audio_service: AudioProcessingService = Depends(get_audio_processing_service),
     evaluator: AudioEvaluator = Depends(get_audio_evaluator),
     recognizer: SpeechRecognizer = Depends(get_speech_recognizer),
@@ -74,16 +75,15 @@ async def evaluate_pronunciation(
     """Compare user pronunciation against a provided reference sample."""
 
     try:
-        reference = await audio_service.load_upload(reference_audio)
+        reference = await audio_service.load_reference_from_youdao(reference_text, voice_type)
         user = await audio_service.load_upload(user_audio)
-    except AudioProcessingError as exc:
+    except (AudioProcessingError, ValueError) as exc:
         logger.exception("Failed to parse audio input")
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
-        await reference_audio.close()
         await user_audio.close()
 
-    response = evaluator.evaluate(reference_text, reference, user)
+    response = evaluator.evaluate(reference_text, reference, user, evaluation_mode)
 
     try:
         transcript = await recognizer.transcribe(user.samples, user.sample_rate)

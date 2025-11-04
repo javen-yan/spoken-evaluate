@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -13,28 +14,52 @@ class HealthResponse(BaseModel):
     status: str = Field(default="ok", description="Current health status")
 
 
-class LetterScore(BaseModel):
-    """Represents the evaluation score for a single letter/symbol."""
+class CharacterScore(BaseModel):
+    """Character-level evaluation details for单词模式."""
 
-    symbol: str = Field(..., description="Evaluated character or phoneme")
-    score: float = Field(..., ge=0.0, le=100.0, description="Score from 0 to 100")
-    frame_start: int = Field(..., ge=0, description="Starting frame index in reference audio")
-    frame_end: int = Field(..., ge=0, description="Ending frame index in reference audio")
-    metrics: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Additional diagnostic metrics for the segment",
-    )
+    symbol: str = Field(..., description="评估的字符或音素")
+    score: float = Field(..., ge=0.0, le=100.0, description="0-100 分数")
+    frame_start: int = Field(..., ge=0, description="参考音频中对应的起始帧")
+    frame_end: int = Field(..., ge=0, description="参考音频中对应的结束帧")
+    metrics: Dict[str, float] = Field(default_factory=dict, description="辅助诊断指标")
 
 
-class EvaluationMetrics(BaseModel):
-    """Aggregated metrics summarising the evaluation process."""
+class WordScore(BaseModel):
+    """Word-level evaluation details for句子模式."""
 
-    dtw_distance: float = Field(..., ge=0.0, description="Raw DTW distance")
-    duration_ratio: float = Field(
-        ..., ge=0.0, description="Ratio between user and reference durations"
-    )
-    energy_ratio: float = Field(..., ge=0.0, description="Relative energy difference")
-    articulation_score: float = Field(..., ge=0.0, le=100.0, description="Articulation quality")
+    word: str = Field(..., description="评估的单词")
+    score: float = Field(..., ge=0.0, le=100.0, description="0-100 分数")
+    frame_start: int = Field(..., ge=0, description="参考音频中对应的起始帧")
+    frame_end: int = Field(..., ge=0, description="参考音频中对应的结束帧")
+    metrics: Dict[str, float] = Field(default_factory=dict, description="辅助诊断指标")
+
+
+class WordEvaluationResult(BaseModel):
+    """Aggregated scoring for单词评测."""
+
+    character_scores: List[CharacterScore] = Field(default_factory=list, description="字符级评分明细")
+    mfcc_score: float = Field(..., ge=0.0, le=100.0, description="MFCC 相似度得分")
+    energy_score: float = Field(..., ge=0.0, le=100.0, description="能量与重音得分")
+    pitch_score: float = Field(..., ge=0.0, le=100.0, description="音高匹配得分")
+    composite_score: float = Field(..., ge=0.0, le=100.0, description="综合得分")
+    overall_score: float = Field(..., ge=0.0, le=100.0, description="整体单词评分")
+
+
+class SentenceEvaluationResult(BaseModel):
+    """Aggregated scoring for句子评测."""
+
+    word_scores: List[WordScore] = Field(default_factory=list, description="单词级评分明细")
+    pronunciation_score: float = Field(..., ge=0.0, le=100.0, description="发音得分")
+    fluency_score: float = Field(..., ge=0.0, le=100.0, description="流利度得分")
+    word_total_score: float = Field(..., ge=0.0, le=100.0, description="单词总分")
+    overall_score: float = Field(..., ge=0.0, le=100.0, description="整体句子评分")
+
+
+class EvaluationMode(str, Enum):
+    """Evaluation modes supported by the服务."""
+
+    WORD = "WORD"
+    SENTENCE = "SENTENCE"
 
 
 class TranscriptResult(BaseModel):
@@ -50,24 +75,19 @@ class TranscriptResult(BaseModel):
 class EvaluationResponse(BaseModel):
     """Response payload returned after processing an evaluation request."""
 
-    overall_score: float = Field(..., ge=0.0, le=100.0, description="Overall quality score")
-    normalized_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Overall score normalised to 0-1"
-    )
-    letter_scores: List[LetterScore] = Field(
-        default_factory=list,
-        description="Per-letter evaluation scores",
-    )
-    metrics: EvaluationMetrics
-    transcript: Optional[TranscriptResult] = Field(
-        None, description="Speech recognition result if available"
-    )
+    mode: EvaluationMode = Field(..., description="评测模式")
+    word_result: Optional[WordEvaluationResult] = Field(None, description="单词评测结果")
+    sentence_result: Optional[SentenceEvaluationResult] = Field(None, description="句子评测结果")
+    transcript: Optional[TranscriptResult] = Field(None, description="语音识别结果")
 
 
 __all__ = [
-    "EvaluationMetrics",
+    "CharacterScore",
+    "EvaluationMode",
     "EvaluationResponse",
     "HealthResponse",
-    "LetterScore",
+    "SentenceEvaluationResult",
     "TranscriptResult",
+    "WordEvaluationResult",
+    "WordScore",
 ]

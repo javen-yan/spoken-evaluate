@@ -4,8 +4,8 @@
 
 ## 架构概览
 
-- **后端**：`backend/` 使用 FastAPI，结合 `librosa` 与 `pydub` 进行音频处理，通过 DTW 对比 MFCC 特征并输出总分、逐字得分及若干诊断指标；如服务器安装了 OpenAI Whisper，还会返回自动识别文本。
-- **前端**：`frontend/` 基于 React + Vite，支持上传标准音频、录制用户音频（Web Audio API），提交后展示评分与指标。
+- **后端**：`backend/` 使用 FastAPI，结合 `librosa` 与 `pydub` 进行音频处理，并自动从有道词典下载参考音频，通过 DTW 对比 MFCC 特征输出多维评分；如服务器安装了 OpenAI Whisper，还会返回自动识别文本。
+- **前端**：`frontend/` 基于 React + Vite，填写参考文本、录制或上传用户音频（Web Audio API），提交后展示单词/句子两种模式下的评分细节。
 - **SDK**：`sdk/js/index.js` 提供一个 `SpokenEvaluateClient`，便于浏览器或 Node.js 环境直接调用评测接口。
 
 目录结构：
@@ -82,8 +82,9 @@ import { SpokenEvaluateClient } from "./sdk/js/index.js";
 const client = new SpokenEvaluateClient({ baseUrl: "http://localhost:8000" });
 const result = await client.evaluate({
   referenceText: "Hello",
-  referenceAudio: referenceFile,
   userAudio: userFile,
+  evaluationMode: "WORD",
+  voiceType: 2,
 });
 ```
 
@@ -103,14 +104,14 @@ const client = new SpokenEvaluateClient({
 
 - `POST /api/evaluate`
   - 请求：`multipart/form-data`
-    - `reference_text`：标准文本
-    - `reference_audio`：标准读音音频（必填）
+    - `reference_text`：标准文本（必填）
     - `user_audio`：用户录音（必填）
+    - `evaluation_mode`：评测模式（`WORD` 或 `SENTENCE`，必填）
+    - `voice_type`：有道语音类型（`1`=英式，`2`=美式，默认 `2`）
   - 响应：`EvaluationResponse`
-    - `overall_score`：综合评分（0-100）
-    - `normalized_score`：归一化得分（0-1）
-    - `letter_scores`：逐字得分列表
-    - `metrics`：DTW 距离、时长比、能量比、咬字分等诊断指标
+    - `mode`：本次评测模式
+    - `word_result`：当 `mode=WORD` 时返回，包含 `character_scores`、`mfcc_score`、`energy_score`、`pitch_score`、`composite_score`、`overall_score`
+    - `sentence_result`：当 `mode=SENTENCE` 时返回，包含 `word_scores`、`pronunciation_score`、`fluency_score`、`word_total_score`、`overall_score`
     - `transcript`：如启用 Whisper，则包含识别文本与估算置信度
 
 ## 后续方向
